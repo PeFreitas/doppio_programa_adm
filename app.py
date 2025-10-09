@@ -23,10 +23,16 @@ TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text('Olá! Envie uma imagem (JPG, PNG) ou um PDF para iniciar o processamento.')
 
+
+
 async def processar_documento(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logging.info("==========================================================")
+    logging.info(">>> NOVO DOCUMENTO RECEBIDO. INICIANDO PROCESSAMENTO. <<<")
+    
     await update.message.reply_text('Recebi seu documento. Iniciando processamento... (Verifique os logs no terminal)')
 
     # 1. Baixar o arquivo do Telegram
+    # ... (o código de download continua o mesmo)
     if update.message.document:
         file_id = update.message.document.file_id
         file_name = update.message.document.file_name
@@ -42,13 +48,17 @@ async def processar_documento(update: Update, context: ContextTypes.DEFAULT_TYPE
     await new_file.download_to_drive(caminho_temporario)
     
     # 2. Chamar nosso módulo de processamento
+    logging.info(f"Arquivo baixado. Chamando 'extrair_dados_do_arquivo' com o caminho: '{caminho_temporario}'")
     dados_brutos_extraidos = extrair_dados_do_arquivo(caminho_temporario)
+    logging.info(f"Retorno de 'extrair_dados_do_arquivo': {dados_brutos_extraidos}")
 
     if not dados_brutos_extraidos or not any(dados_brutos_extraidos.values()):
+        logging.warning("A extração retornou vazia. Enviando mensagem de falha para o usuário.")
         await update.message.reply_text('Não consegui extrair informações do arquivo. Verifique a qualidade da imagem e os logs do terminal.')
         os.remove(caminho_temporario)
         return
 
+    # ... (o resto da função continua igual)
     # 3. Chamar nosso "cérebro" para padronizar os dados
     dados_finais = padronizar_dados(dados_brutos_extraidos)
 
@@ -70,7 +80,8 @@ async def processar_documento(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     # 6. Limpar o arquivo temporário
     os.remove(caminho_temporario)
-
+    logging.info(">>> PROCESSAMENTO FINALIZADO. AGUARDANDO NOVO DOCUMENTO. <<<")
+    logging.info("==========================================================")
 
 def main():
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()

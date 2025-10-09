@@ -137,16 +137,34 @@ def padronizar_dados(dados_extraidos):
 
 def extrair_dados_do_arquivo(caminho_arquivo):
     """ Função principal que gerencia o processo de OCR para uma imagem. """
-    logging.info(f"Iniciando OCR para o arquivo: '{caminho_arquivo}'")
-    try:
-        texto_completo = pytesseract.image_to_string(Image.open(caminho_arquivo), lang='por')
-        logging.info(f"--- TEXTO BRUTO EXTRAÍDO ---\n{texto_completo}\n-----------------------------")
-        dados_brutos = analisar_texto_bruto(texto_completo)
-        return dados_brutos
-    except Exception as e:
-        logging.error(f"Erro CRÍTICO no processo de OCR: {e}")
+    logging.info(f"FUNÇÃO 'extrair_dados_do_arquivo' INICIADA para o arquivo: '{caminho_arquivo}'")
+    
+    # Adicionando uma verificação extra para ver se o arquivo existe antes de tentar abrir
+    if not os.path.exists(caminho_arquivo):
+        logging.error(f"  -> O arquivo temporário não foi encontrado no caminho: {caminho_arquivo}")
         return {}
 
+    try:
+        logging.info("  -> Tentando abrir a imagem com a biblioteca PIL...")
+        imagem = Image.open(caminho_arquivo)
+        logging.info("  -> Imagem aberta com sucesso.")
+        
+        logging.info("  -> CHAMANDO TESSERACT (pytesseract) para extrair o texto...")
+        texto_completo = pytesseract.image_to_string(imagem, lang='por')
+        logging.info("  -> Tesseract finalizou a execução.")
+        
+        logging.info(f"--- TEXTO BRUTO EXTRAÍDO ---\n{texto_completo}\n-----------------------------")
+        
+        dados_brutos = analisar_texto_bruto(texto_completo)
+        return dados_brutos
+        
+    except Exception as e:
+        # Este log agora vai imprimir o erro completo, com a linha e o motivo.
+        logging.error("ERRO CRÍTICO NO BLOCO TRY...EXCEPT de 'extrair_dados_do_arquivo'.", exc_info=True)
+        # Adicionamos um print() como garantia extra, caso o logging falhe por algum motivo.
+        print(f"!!! PRINT DE ERRO EM 'extrair_dados_do_arquivo': {e} !!!")
+        return {}
+    
 # --- FUNÇÕES REAIS DO GOOGLE COM LOGS DETALHADOS ---
 
 def adicionar_linha_sheets(dados_finais):
