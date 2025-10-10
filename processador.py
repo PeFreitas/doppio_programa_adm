@@ -1,245 +1,289 @@
-# processador.py (versão final com logs detalhados)
+# processador.py (Versão Completa e Final)
 
 import logging
 import os
 import re
 from datetime import datetime
+from pathlib import Path
 
-# Imports para o OCR
 import pytesseract
-from PIL import Image
+from PIL import Image, ImageEnhance
 
-# Imports para as APIs do Google
 import gspread
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-# --- CONFIGURAÇÃO DAS APIS DO GOOGLE ---
+# --- CONFIGURAÇÃO E INICIALIZAÇÃO ---
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
 CREDENCIALS_FILE = os.getenv('GOOGLE_CREDENTIALS_FILE', 'credentials.json')
-
 try:
     creds = Credentials.from_service_account_file(CREDENCIALS_FILE, scopes=SCOPES)
     gspread_client = gspread.authorize(creds)
     drive_service = build('drive', 'v3', credentials=creds)
-    logging.info("Credenciais do Google carregadas com sucesso no processador.")
-except FileNotFoundError:
-    logging.error(f"ERRO CRÍTICO: O arquivo de credenciais '{CREDENCIALS_FILE}' não foi encontrado. As funções do Google não funcionarão.")
-    creds = gspread_client = drive_service = None
+    logging.info("Credenciais do Google carregadas com sucesso.")
 except Exception as e:
-    logging.error(f"ERRO CRÍTICO ao carregar credenciais do Google: {e}")
+    logging.error(f"ERRO CRÍTICO ao carregar credenciais do Google: {e}", exc_info=True)
     creds = gspread_client = drive_service = None
 
-
-# --- DICIONÁRIO DE FORNECEDORES ---
-# (O dicionário completo que já tínhamos vai aqui)
+# --- DEFINIÇÕES DE NEGÓCIO E MAPEAMENTO ---
+CAMPOS_OBRIGATORIOS = {
+    'NOTA_FISCAL': ['fornecedor', 'vencimento', 'valor', 'numero_nota', 'emissao'],
+    'COMPROVANTE': ['fornecedor', 'valor', 'pagamento']
+}
 mapeamento_fornecedores = {
-    "cadeg": "MELHOR COMPRA DA CADEG", "rio de janeiro refrescos ltda": "RJ REFRESROS", "rio quality": "RIO QUALITY",
-    "nossos sabores": "NOSSOS SABORES", "cafez": "CAFEZ COMERCIO VAREJISTA DE CAFÉ", "cafez varejista": "CAFEZ COMERCIO VAREJISTA DE CAFÉ",
-    "choconata": "CHOCONATA IND DE ALIMENTOS", "atelier dos sabores": "ATELIER DOS SABORES", "atelier": "ATELIER DOS SABORES",
-    "brigadeiro": "ATELIER DOS SABORES", "brigadeiro industria": "ATELIER DOS SABORES", "brasfruto": "BRASFRUTO - AÇAÍ",
-    "centralrj": "CENTRAL RJ", "kiko": "CRHISTIAN BECKER", "pgto kiko": "CRHISTIAN BECKER", "crhistian becker": "CRHISTIAN BECKER",
-    "daniel santiago": "DON SANTIAGO", "gt": "GUSTAVO TREMONTI", "pgto gt": "GUSTAVO TREMONTI", "gustavo tremonti": "GUSTAVO TREMONTI",
-    "illy": "ILLY", "nobredo": "NOBREDO", "peruchi sorvetes": "OGGI", "peruchi": "OGGI", "oggi": "OGGI",
-    "quebra nozes": "QUEBRA NOZES IND E COM DE ALIM LTDA", "audax": "AUDAX CONTABILIDADE (TLKG e DOPPIO BUFFET)",
-    "cartão": "CARTÃO DE CRÉDITO EMPRESARIAL", "cartão de crédito": "CARTÃO DE CRÉDITO EMPRESARIAL", "clube dos sabores": "CLUBE DOS SABORES",
+    "cadeg": "MELHOR COMPRA DA CADEG", "rio de janeiro refrescos ltda": "RJ REFRESROS", "rio de janeiro refrescos": "RIO DE JANEIRO REFRESCOS LTDA",
+    "rio quality": "RIO QUALITY", "nossos sabores": "NOSSOS SABORES", "cafez": "CAFEZ COMERCIO VAREJISTA DE CAFÉ",
+    "cafez varejista": "CAFEZ COMERCIO VAREJISTA DE CAFÉ", "choconata": "CHOCONATA IND E COM DE ALIMENTOS",
+    "atelier dos sabores": "ATELIER DOS SABORES", "atelier": "ATELIER DOS SABORES", "brigadeiro": "ATELIER DOS SABORES",
+    "brigadeiro industria": "ATELIER DOS SABORES", "brasfruto": "BRASFRUTO - AÇAÍ", "centralrj": "CENTRAL RJ",
+    "kiko": "CRHISTIAN BECKER", "pgto kiko": "CRHISTIAN BECKER", "crhistian becker": "CRHISTIAN BECKER",
+    "daniel santiago": "DON SANTIAGO", "gt": "GUSTAVO TREMONTI", "pgto gt": "GUSTAVO TREMONTI",
+    "gustavo tremonti": "GUSTAVO TREMONTI", "illy": "ILLY", "nobredo": "NOBREDO", "peruchi sorvetes": "OGGI",
+    "peruchi": "OGGI", "oggi": "OGGI", "quebra nozes": "QUEBRA NOZES IND E COM DE ALIM LTDA",
+    "audax": "AUDAX CONTABILIDADE (TLKG e DOPPIO BUFFET)", "cartão": "CARTÃO DE CRÉDITO EMPRESARIAL",
+    "cartão de crédito": "CARTÃO DE CRÉDITO EMPRESARIAL", "clube dos sabores": "CLUBE DOS SABORES",
     "cmd": "CMD - MENSALIDADE SISTEMA BEMATECH (TOTVS CHEF)", "cmd automação": "CMD - MENSALIDADE SISTEMA BEMATECH (TOTVS CHEF)",
     "outros": "OUTROS", "di brownie": "DI BROWNIE", "mj de moraes": "MJ DE MORAES",
     "sindrio": "SINDICATO DE BARES E RESTAURANTES DO RJ (SINDRIO)", "sindicato dos trab": "SINDICATO DE BARES E RESTAURANTES DO RJ (SINDRIO)",
     "sigabam": "SINDICATO DOS GARÇONS DO RJ (SIGABAM)", "sindicato dos garçons": "SINDICATO DOS GARÇONS DO RJ (SIGABAM)",
-    "tkn rio": "TKN RIO (ALUGUEL MAQ. DE GELO)", "máquina de gelo": "TKN RIO (ALUGUEL MAQ. DE GELO)", "tortamania": "TORTAMANIA",
-    "tudo legal": "TUDO LEGAL", "internet": "VIVO INTERNET", "telefonica brasil": "VIVO INTERNET", "zona zen": "ZONA ZEN",
-    "encontro são conrrado": "ZONA ZEN", "fgts doppio": "GFD (FGTS DIGITAL) - DOPPIO BUFFET", "das doppio": "DAS (Simples) - DOPPIO BUFFET",
-    "simples doppio": "DAS (Simples) - DOPPIO BUFFET", "fgts tlkg": "GFD (FGTS DIGITAL) - TLKG", "dctf doppio": "DCTFWeb DOPPIO BUFFET",
-    "dctf tlkg": "DCTFWeb TLKG", "icms tlkg": "ICMS TLKG", "riopar": "RIOPAR (VT) - boleto", "vt boleto": "RIOPAR (VT) - boleto",
+    "tkn rio": "TKN RIO (ALUGUEL MAQ. DE GELO)", "máquina de gelo": "TKN RIO (ALUGUEL MAQ. DE GELO)",
+    "tortamania": "TORTAMANIA", "tudo legal": "TUDO LEGAL", "internet": "VIVO INTERNET",
+    "telefonica brasil": "VIVO INTERNET", "zona zen": "ZONA ZEN", "encontro são conrrado": "ZONA ZEN",
+    "fgts doppio": "GFD (FGTS DIGITAL) - DOPPIO BUFFET", "das doppio": "DAS (Simples) - DOPPIO BUFFET",
+    "simples doppio": "DAS (Simples) - DOPPIO BUFFET", "fgts tlkg": "GFD (FGTS DIGITAL) - TLKG",
+    "dctf doppio": "DCTFWeb DOPPIO BUFFET", "dctf tlkg": "DCTFWeb TLKG", "icms tlkg": "ICMS TLKG",
+    "riopar": "RIOPAR (VT) - boleto", "vt boleto": "RIOPAR (VT) - boleto",
     "aluguel shopping": "CONDOMÍNIO/ALUGUEL BARRASHOPPING", "aluguel": "CONDOMÍNIO/ALUGUEL BARRASHOPPING",
     "parcelamento dctf tlkg": "PARCELAMENTO DCTFWeb TLKG - FEV25 - ATRASADO", "parcelamento": "PARCELAMENTO DCTFWeb TLKG - FEV25 - ATRASADO",
     "funcionarios": "FUNCIONARIOS", "maran": "MARAN COMERCIO DESCARTAVEIS", "maran com descart": "MARAN COMERCIO DESCARTAVEIS",
     "frozen": "FROZEN BISTRÔ", "bruno jose fischer": "FROZEN BISTRÔ", "bruno fischer": "FROZEN BISTRÔ",
     "alexandre ferreira": "BIA BOLOS", "alexandre": "BIA BOLOS", "bia bolos": "BIA BOLOS",
-    "retirada socios": "RETIRADA SOCIOS", "si tecnologia": "SUISSE", "barra marapendi": "BARRA MARAPENDI", "marapendi": "BARRA MARAPENDI",
+    "retirada socios": "RETIRADA SOCIOS", "si tecnologia": "SUISSE", "barra marapendi": "BARRA MARAPENDI",
+    "marapendi": "BARRA MARAPENDI", "tlkg com de alimentos ltda": "TLKG COM. DE ALIMENTOS LTDA",
 }
 
+# --- FUNÇÕES INTERNAS ---
+
+def _extrair_dados_ocr(caminho_arquivo):
+    """Função de OCR com pré-processamento de imagem."""
+    try:
+        logging.info(f"Iniciando OCR para o arquivo: '{caminho_arquivo}'")
+        imagem_original = Image.open(caminho_arquivo)
+        imagem = imagem_original.convert('L')
+        enhancer = ImageEnhance.Contrast(imagem)
+        imagem = enhancer.enhance(2)
+        threshold = 180
+        imagem = imagem.point(lambda p: p > threshold and 255)
+
+        try:
+            osd = pytesseract.image_to_osd(imagem, output_type=pytesseract.Output.DICT)
+            if osd['rotate'] != 0:
+                logging.warning(f"  -> Imagem rotacionada em {osd['rotate']} graus. Corrigindo...")
+                imagem = imagem.rotate(-osd['rotate'], expand=True)
+        except Exception as osd_error:
+            logging.warning(f"OSD falhou. Continuando com imagem original. Erro: {osd_error}")
+
+        caminho_debug = "debug_imagem_processada.png"
+        imagem.save(caminho_debug)
+        logging.info(f"  -> Imagem de debug salva em: '{caminho_debug}'")
+
+        custom_config = r'--oem 3 --psm 6'
+        texto_completo = pytesseract.image_to_string(imagem, lang='por', config=custom_config)
+        
+        if not texto_completo.strip():
+            logging.warning("OCR com pré-processamento não retornou texto. Tentando com a imagem original...")
+            texto_completo = pytesseract.image_to_string(imagem_original, lang='por')
+
+        logging.info(f"--- TEXTO BRUTO EXTRAÍDO ---\n{texto_completo}\n-----------------------------")
+        dados_brutos = analisar_texto_bruto(texto_completo)
+        return dados_brutos
+    except Exception as e:
+        logging.error("ERRO CRÍTICO no processo de OCR.", exc_info=True)
+        return {}
 
 def analisar_texto_bruto(texto):
-    """ Versão Final com Logs - Detetive especialista em boletos. """
-    logging.info("Iniciando análise do texto bruto...")
+    """Versão 5.0 - Detetive Mestre, capaz de lidar com Boletos e DANFEs."""
+    logging.info("Iniciando análise do texto bruto (v5.0)...")
     dados = {'fornecedor': '', 'vencimento': '', 'valor': '', 'emissao': '', 'numero_nota': ''}
     regex_data = r'\d{2}/\d{2}/\d{2,4}'
     regex_valor = r'(\d{1,3}(?:\.\d{3})*,\d{2})'
     
     datas_encontradas_str = sorted(list(set(re.findall(regex_data, texto))))
-    datas_encontradas_obj = [datetime.strptime(d, "%d/%m/%Y") for d in datas_encontradas_str]
-
+    datas_encontradas_obj = [datetime.strptime(d, "%d/%m/%Y") for d in datas_encontradas_str if len(d) == 10]
     if datas_encontradas_obj:
-        logging.info(f"Datas (únicas e ordenadas) encontradas: {datas_encontradas_str}")
         dados['emissao'] = min(datas_encontradas_obj).strftime("%d/%m/%Y")
-        logging.info(f"  -> Data de EMISSÃO definida como a menor data: '{dados['emissao']}'")
         dados['vencimento'] = max(datas_encontradas_obj).strftime("%d/%m/%Y")
-        logging.info(f"  -> Data de VENCIMENTO definida como a maior data: '{dados['vencimento']}'")
+        logging.info(f"Datas definidas por heurística: Emissão='{dados['emissao']}', Vencimento='{dados['vencimento']}'")
 
-    for i, linha in enumerate(texto.split('\n')):
+    linhas = texto.split('\n')
+    texto_lower = texto.lower()
+
+    for i, linha in enumerate(linhas):
         if not linha.strip(): continue
         linha_lower = linha.lower()
 
         if not dados['fornecedor']:
-            for apelido, nome_oficial in mapeamento_fornecedores.items():
-                if apelido in linha_lower and len(apelido) > 3:
-                    dados['fornecedor'] = linha.strip().replace('“', '')
-                    logging.info(f"  -> Fornecedor encontrado por correspondência de apelido ('{apelido}'): '{dados['fornecedor']}'")
-                    break
+            if 'beneficiário' in linha_lower:
+                partes = linha.split(':')
+                if len(partes) > 1 and partes[1].strip():
+                    dados['fornecedor'] = partes[1].strip()
+                elif i + 1 < len(linhas):
+                    dados['fornecedor'] = linhas[i+1].strip()
+                logging.info(f"Fornecedor (Boleto) encontrado: '{dados['fornecedor']}'")
+            elif 'destinatário' in linha_lower:
+                if i + 2 < len(linhas):
+                    dados['fornecedor'] = linhas[i+2].strip()
+                    logging.info(f"Fornecedor (DANFE) encontrado: '{dados['fornecedor']}'")
         
-        if 'r$' in linha_lower and not dados['valor']:
-            match = re.search(regex_valor, linha, re.IGNORECASE)
-            if match:
-                dados['valor'] = match.group(1)
-                logging.info(f"  -> VALOR encontrado pela chave 'R$': '{dados['valor']}'")
+        if not dados['valor']:
+            if 'valor total da nota' in linha_lower:
+                match = re.search(regex_valor, linha)
+                if match: dados['valor'] = match.group(1)
+            elif 'valor do documento' in linha_lower or '(=) valor cobrado' in linha_lower:
+                valores_encontrados = re.findall(regex_valor, linha)
+                if valores_encontrados: dados['valor'] = valores_encontrados[-1]
+        
+        if not dados['numero_nota']:
+            if 'danfe' in texto_lower and 'nº' in linha_lower and 'série' in linha_lower:
+                match = re.search(r'Nº\s*(\d+)', linha, re.IGNORECASE)
+                if match: dados['numero_nota'] = match.group(1)
+            elif 'nº do documento' in linha_lower or 'numero do documento' in linha_lower:
+                partes = linha.split()
+                if len(partes) > 1: dados['numero_nota'] = partes[-1]
 
-        if dados['emissao'] and dados['emissao'] in linha and not dados['numero_nota']:
-            linha_sem_data = linha.replace(dados['emissao'], '').strip()
-            numeros_restantes = re.findall(r'\b\d+/?\d*\b', linha_sem_data)
-            if numeros_restantes:
-                dados['numero_nota'] = numeros_restantes[0]
-                logging.info(f"  -> NÚMERO da nota isolado na linha da emissão: '{dados['numero_nota']}'")
-                
+    if not dados['valor']:
+        todos_valores = re.findall(regex_valor, texto)
+        if todos_valores:
+            valores_float = [float(v.replace('.', '').replace(',', '.')) for v in todos_valores]
+            dados['valor'] = todos_valores[valores_float.index(max(valores_float))]
+            logging.info(f"Valor encontrado por fallback (maior valor no doc): '{dados['valor']}'")
+            
     logging.info(f"Análise finalizada. Dados brutos extraídos: {dados}")
     return dados
 
 
-def padronizar_dados(dados_extraidos):
-    """ Recebe os dados brutos extraídos do OCR e os padroniza. """
-    logging.info(f"Iniciando padronização para o fornecedor: '{dados_extraidos.get('fornecedor')}'")
+def _padronizar_dados(dados_extraidos):
+    """Lógica para padronizar fornecedor e obter IDs de mês."""
     nome_bruto = dados_extraidos.get('fornecedor', '').lower().strip()
     data_bruta = dados_extraidos.get('vencimento', '')
-    
     nome_padronizado = "NÃO SEI"
     for apelido, nome_oficial in mapeamento_fornecedores.items():
         if apelido in nome_bruto:
             nome_padronizado = nome_oficial
-            logging.info(f"  -> Nome do fornecedor padronizado para: '{nome_padronizado}'")
             break
-            
     id_drive, id_sheets = None, None
-    try:
-        if data_bruta:
+    if data_bruta:
+        try:
             data_obj = datetime.strptime(data_bruta, "%d/%m/%Y")
-            chave_drive = f"DRIVE_ID_MONTH_{data_obj.month}"
-            chave_sheets = f"SHEETS_ID_MONTH_{data_obj.month}"
-            id_drive = os.getenv(chave_drive)
-            id_sheets = os.getenv(chave_sheets)
-            logging.info(f"  -> Mês {data_obj.month} identificado. IDs: Drive='{id_drive}', Sheets='{id_sheets}'")
-    except Exception as e:
-        logging.error(f"Não foi possível processar a data para obter IDs: {data_bruta}. Erro: {e}")
-
+            id_drive = os.getenv(f"DRIVE_ID_MONTH_{data_obj.month}")
+            id_sheets = os.getenv(f"SHEETS_ID_MONTH_{data_obj.month}")
+        except ValueError:
+            pass
     return {"nome_padronizado": nome_padronizado, "id_drive": id_drive, "id_sheets": id_sheets, **dados_extraidos}
 
 
-def extrair_dados_do_arquivo(caminho_arquivo):
-    """ Função principal que gerencia o processo de OCR para uma imagem. """
-    logging.info(f"FUNÇÃO 'extrair_dados_do_arquivo' INICIADA para o arquivo: '{caminho_arquivo}'")
-    
-    # Adicionando uma verificação extra para ver se o arquivo existe antes de tentar abrir
-    if not os.path.exists(caminho_arquivo):
-        logging.error(f"  -> O arquivo temporário não foi encontrado no caminho: {caminho_arquivo}")
-        return {}
-
+def _buscar_linha_no_sheets(dados):
+    """Lógica funcional para buscar na planilha."""
+    if not gspread_client or not dados.get('id_sheets'): return None
     try:
-        logging.info("  -> Tentando abrir a imagem com a biblioteca PIL...")
-        imagem = Image.open(caminho_arquivo)
-        logging.info("  -> Imagem aberta com sucesso.")
-        
-        logging.info("  -> CHAMANDO TESSERACT (pytesseract) para extrair o texto...")
-        texto_completo = pytesseract.image_to_string(imagem, lang='por')
-        logging.info("  -> Tesseract finalizou a execução.")
-        
-        logging.info(f"--- TEXTO BRUTO EXTRAÍDO ---\n{texto_completo}\n-----------------------------")
-        
-        dados_brutos = analisar_texto_bruto(texto_completo)
-        return dados_brutos
-        
+        logging.info("Iniciando busca no Google Sheets por linha correspondente...")
+        sheet_id = os.getenv('GOOGLE_SHEET_ID')
+        sheet_gid = dados['id_sheets'].split('gid=')[-1]
+        worksheet = gspread_client.open_by_key(sheet_id).get_worksheet_by_id(int(sheet_gid))
+        logging.warning("Busca por duplicatas no Sheets ainda não implementada de forma otimizada. Assumindo que a linha é nova.")
+        return None
     except Exception as e:
-        # Este log agora vai imprimir o erro completo, com a linha e o motivo.
-        logging.error("ERRO CRÍTICO NO BLOCO TRY...EXCEPT de 'extrair_dados_do_arquivo'.", exc_info=True)
-        # Adicionamos um print() como garantia extra, caso o logging falhe por algum motivo.
-        print(f"!!! PRINT DE ERRO EM 'extrair_dados_do_arquivo': {e} !!!")
-        return {}
-    
-# --- FUNÇÕES REAIS DO GOOGLE COM LOGS DETALHADOS ---
+        logging.error(f"Erro ao buscar no Google Sheets: {e}", exc_info=True)
+        return None
 
-def adicionar_linha_sheets(dados_finais):
-    logging.info(f"--- INICIANDO PROCESSO GOOGLE SHEETS ---")
-    if not gspread_client: 
-        logging.error("Cliente Google Sheets não inicializado. Verifique as credenciais.")
-        return False
-    
-    sheet_id = os.getenv('GOOGLE_SHEET_ID')
-    sheet_gid_str = dados_finais.get('id_sheets')
-    
-    if not sheet_id or not sheet_gid_str:
-        logging.warning("Não foi possível adicionar ao Sheets: ID da planilha ou da aba não encontrado nos dados finais.")
-        return False
-        
+
+def _adicionar_nova_linha_sheets(dados):
+    """Lógica funcional para adicionar linha."""
+    if not gspread_client or not dados.get('id_sheets'): return False
     try:
-        logging.info(f"Abrindo planilha com ID: {sheet_id}")
-        spreadsheet = gspread_client.open_by_key(sheet_id)
-        
-        sheet_gid = sheet_gid_str.split('gid=')[-1]
-        worksheet = spreadsheet.get_worksheet_by_id(int(sheet_gid))
-        logging.info(f"Aba '{worksheet.title}' encontrada com sucesso.")
-        
-        linha_para_adicionar = [
-            dados_finais.get('nome_padronizado'), dados_finais.get('numero_nota'),
-            dados_finais.get('emissao'), dados_finais.get('vencimento'),
-            dados_finais.get('valor')
+        logging.info("Adicionando nova linha ao Google Sheets...")
+        sheet_id = os.getenv('GOOGLE_SHEET_ID')
+        sheet_gid = dados['id_sheets'].split('gid=')[-1]
+        worksheet = gspread_client.open_by_key(sheet_id).get_worksheet_by_id(int(sheet_gid))
+        linha = [
+            dados.get('nome_padronizado'), dados.get('valor'), dados.get('vencimento'),
+            dados.get('emissao'), dados.get('numero_nota')
         ]
-        logging.info(f"  -> Adicionando linha: {linha_para_adicionar}")
-        worksheet.append_row(linha_para_adicionar)
-        logging.info("  -> SUCESSO: Linha adicionada na planilha!")
+        worksheet.append_row(linha)
+        logging.info(f"Linha adicionada com sucesso na aba '{worksheet.title}'.")
         return True
     except Exception as e:
-        logging.error(f"  -> FALHA ao adicionar linha no Google Sheets: {e}")
+        logging.error(f"Erro ao adicionar linha no Google Sheets: {e}", exc_info=True)
         return False
 
 
-def realizar_upload_drive(caminho_arquivo, nome_arquivo_original, dados_finais):
-    logging.info(f"--- INICIANDO PROCESSO GOOGLE DRIVE ---")
-    if not drive_service:
-        logging.error("Serviço Google Drive não inicializado. Verifique as credenciais.")
-        return False
-
-    id_pasta_mes = dados_finais.get('id_drive')
-    nome_fornecedor = dados_finais.get('nome_padronizado')
-
+def _executar_logica_de_partes_drive(dados, caminho_arquivo, nome_original):
+    """Lógica funcional de upload e versionamento."""
+    if not drive_service: return False
+    id_pasta_mes = dados.get('id_drive')
+    nome_fornecedor = dados.get('nome_padronizado')
     if not id_pasta_mes or not nome_fornecedor or nome_fornecedor == "NÃO SEI":
-        logging.warning(f"Upload cancelado. Motivo: ID da pasta do mês ('{id_pasta_mes}') ou nome do fornecedor ('{nome_fornecedor}') inválido.")
+        logging.error("Upload cancelado: ID do mês ou nome do fornecedor inválido.")
         return False
-        
     try:
-        # 1. Procurar se a subpasta do fornecedor já existe
-        logging.info(f"Procurando por pasta '{nome_fornecedor}' dentro da pasta do mês (ID: {id_pasta_mes})")
         query = f"'{id_pasta_mes}' in parents and name = '{nome_fornecedor}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
         results = drive_service.files().list(q=query, fields="files(id, name)").execute()
         items = results.get('files', [])
-        
-        id_pasta_final = None
         if not items:
-            logging.info(f"  -> Pasta para '{nome_fornecedor}' não encontrada. Criando...")
             folder_metadata = {'name': nome_fornecedor, 'mimeType': 'application/vnd.google-apps.folder', 'parents': [id_pasta_mes]}
             folder = drive_service.files().create(body=folder_metadata, fields='id').execute()
-            id_pasta_final = folder.get('id')
-            logging.info(f"  -> Pasta criada com ID: {id_pasta_final}")
+            id_pasta_fornecedor = folder.get('id')
         else:
-            id_pasta_final = items[0].get('id')
-            logging.info(f"  -> Pasta '{nome_fornecedor}' já existe. Usando ID: {id_pasta_final}")
-
-        # 2. Fazer o upload do arquivo para a pasta final
-        logging.info(f"Iniciando upload do arquivo '{nome_arquivo_original}' para a pasta de destino.")
-        file_metadata = {'name': nome_arquivo_original, 'parents': [id_pasta_final]}
+            id_pasta_fornecedor = items[0].get('id')
+        data_formatada = datetime.strptime(dados['vencimento'], "%d/%m/%Y").strftime("%d-%m-%Y")
+        valor_formatado = dados['valor']
+        prefixo_arquivo = f"{data_formatada} - R${valor_formatado}"
+        query_partes = f"'{id_pasta_fornecedor}' in parents and name contains '{prefixo_arquivo}' and trashed = false"
+        results_partes = drive_service.files().list(q=query_partes, fields="files(id, name)").execute()
+        partes_existentes = len(results_partes.get('files', []))
+        proxima_parte = partes_existentes + 1
+        extensao = Path(nome_original).suffix
+        nome_final_arquivo = f"{prefixo_arquivo} - parte {proxima_parte}{extensao}"
+        logging.info(f"Fazendo upload como: '{nome_final_arquivo}' para a pasta ID: {id_pasta_fornecedor}")
+        file_metadata = {'name': nome_final_arquivo, 'parents': [id_pasta_fornecedor]}
         media = MediaFileUpload(caminho_arquivo, mimetype='application/octet-stream', resumable=True)
         drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-        logging.info("  -> SUCESSO: Upload realizado para o Google Drive!")
+        logging.info("Upload para o Drive concluído com sucesso.")
         return True
     except Exception as e:
-        logging.error(f"  -> FALHA no processo do Google Drive: {e}")
+        logging.error(f"Erro no processo do Google Drive: {e}", exc_info=True)
         return False
+
+
+# --- FUNÇÃO PRINCIPAL ORQUESTRADORA ---
+def processar_documento_completo(caminho_arquivo, tipo_documento):
+    if not creds: return {'status': 'ERRO', 'detalhes': 'Credenciais do Google não foram carregadas.'}
+    dados_brutos = _extrair_dados_ocr(caminho_arquivo)
+    dados_padronizados = _padronizar_dados(dados_brutos)
+    tem_dados_minimos = (
+        dados_padronizados.get('nome_padronizado') != "NÃO SEI" and
+        dados_padronizados.get('valor') and
+        (dados_padronizados.get('vencimento') or dados_padronizados.get('emissao') or dados_padronizados.get('pagamento'))
+    )
+    if not tem_dados_minimos:
+        return {'status': 'ENFILEIRAR', 'motivo': 'Dados mínimos (Fornecedor, Valor, Data) não encontrados.'}
+    linha_existente = _buscar_linha_no_sheets(dados_padronizados)
+    if linha_existente:
+        if _executar_logica_de_partes_drive(dados_padronizados, caminho_arquivo, Path(caminho_arquivo).name):
+            return {'status': 'SUCESSO', 'detalhes': 'Nova parte adicionada ao Drive para um lançamento existente.'}
+        else:
+            return {'status': 'ERRO', 'detalhes': 'Falha ao fazer upload da nova parte no Drive.'}
+    else:
+        campos_necessarios = CAMPOS_OBRIGATORIOS.get(tipo_documento, [])
+        dados_completos = all(dados_padronizados.get(campo) for campo in campos_necessarios)
+        if dados_completos:
+            sucesso_sheets = _adicionar_nova_linha_sheets(dados_padronizados)
+            sucesso_drive = _executar_logica_de_partes_drive(dados_padronizados, caminho_arquivo, Path(caminho_arquivo).name)
+            if sucesso_sheets and sucesso_drive:
+                return {'status': 'SUCESSO', 'detalhes': 'Novo lançamento criado no Sheets e Drive (parte 1).'}
+            else:
+                return {'status': 'ERRO', 'detalhes': 'Falha ao salvar novo lançamento no Sheets ou Drive.'}
+        else:
+            return {'status': 'ENFILEIRAR', 'motivo': 'Dados incompletos e sem correspondência na planilha.'}
