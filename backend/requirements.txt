@@ -1,0 +1,33 @@
+# Framework para o servidor web
+Flask==3.0.0
+Flask-Cors==4.0.0
+
+# Bibliotecas para a API do Google (Sheets e Drive)
+google-api-core==2.11.1
+google-api-python-client==2.86.0
+google-auth==2.17.3
+google-auth-httplib2==0.1.0
+google-auth-oauthlib==1.0.0
+googleapis-common-protos==1.59.0
+gspread==5.10.0
+oauth2client==4.1.3
+
+# Utilitários e dependências do Google
+cachetools==5.3.1
+certifi==2023.5.7
+charset-normalizer==3.1.0
+idna==3.4
+pyasn1==0.5.0
+pyasn1_modules==0.3.0
+requests==2.31.0
+requests-oauthlib==1.3.1
+rsa==4.9
+six==1.16.0
+uritemplate==4.1.1
+urllib3==2.0.2
+
+# Para carregar variáveis de ambiente do arquivo .env
+python-dotenv==1.0.0
+
+# Para correspondência aproximada de nomes (fuzzy matching)
+thefuzz==0.20.0

@@ -1,13 +1,32 @@
-# Ambiente virtual
+# Arquivos de configuração e segredos
+.env
+credentials.json
+client_secret.json
+token.json
+
+# Ambiente virtual do Python (Backend)
+backend/venv/
 venv/
 
-# Arquivos de cache do Python
+# Cache e arquivos compilados do Python
 __pycache__/
 *.pyc
 
-# Arquivos de configuração local
-.env
+# Dependências do Node.js (Frontend)
+frontend/node_modules/
+node_modules/
 
-# Arquivos de credenciais e temporários
-credentials.json
+# Arquivos compilados do Frontend
+frontend/dist/
+dist/
+
+# Arquivos temporários
 temp_files/
+
+# Logs e arquivos de debug do NPM
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Configurações de Editor
+.vscode/

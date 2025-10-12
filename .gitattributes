@@ -1,0 +1,27 @@
+# Define o comportamento padrão para normalizar os finais de linha.
+* text=auto
+
+# Define explicitamente arquivos de texto que devem ter seus finais de linha normalizados.
+*.html text
+*.css text
+*.scss text
+*.js text
+*.ts text
+*.json text
+*.py text
+*.md text
+*.gitignore text
+
+# Define arquivos que devem sempre usar o final de linha do Windows (CRLF).
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Define arquivos que devem sempre usar o final de linha do Linux/Mac (LF).
+*.sh text eol=lf
+
+# Marca arquivos binários para que o Git nunca tente modificar seus finais de linha.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary

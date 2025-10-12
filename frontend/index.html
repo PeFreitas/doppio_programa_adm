@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Doppio ADM</title>
+    <link rel="stylesheet" href="dist/main.css">
+</head>
+<body>
+    <div class="app-container">
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <h1 class="logo">DO<span>PP</span>IO CAFÉ</h1>
+            </div>
+            <ul class="nav-menu">
+                <li><a href="#" class="nav-link active" data-target="notas">Envio de Notas</a></li>
+                <li><a href="#" class="nav-link" data-target="comprovantes">Envio de Comprovantes</a></li>
+                <li><a href="#" class="nav-link" data-target="notinhas">Envio de Notinhas</a></li>
+            </ul>
+        </nav>
+
+        <main class="main-content">
+            <section id="notas" class="content-section active">
+                <div class="container">
+                    <h1>Envio de Notas Fiscais</h1>
+                    <form id="upload-form">
+                        <div class="form-group">
+                             <label for="file-input">Selecione o(s) Documento(s) (Imagem ou PDF)</label>
+                                  <div id="drop-zone" class="drop-zone">
+                                         <p>Arraste e solte os arquivos aqui ou clique para selecionar.</p>
+                                         <input type="file" id="file-input" name="documento" accept="image/*,.pdf" required multiple hidden>
+                                  </div>
+                            <ul id="file-list" class="file-list"></ul>
+                        </div>
+                        <div class="form-group">
+                            <label for="fornecedor">Fornecedor</label>
+                            <input type="text" id="fornecedor" name="fornecedor" placeholder="Nome do Fornecedor" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="meio_pagamento">Meio de Pagamento</label>
+                            <select id="meio_pagamento" name="meio_pagamento">
+                                <option value="BOLETO">Boleto</option>
+                                <option value="PIX">PIX</option>
+                                <option value="CARTAO DE CREDITO">Cartão de Crédito</option>
+                                <option value="TRANSFERENCIA">Transferência</option>
+                                <option value="OUTROS">Outros</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="valor">Valor (R$)</label>
+                            <input type="text" id="valor" name="valor" placeholder="Ex: 150,00" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="vencimento">Data de Vencimento</label>
+                            <input type="date" id="vencimento" name="vencimento" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="emissao">Data de Emissão</label>
+                            <input type="date" id="emissao" name="emissao">
+                        </div>
+                        <div class="form-group">
+                            <label for="numero_nota">Número da Nota/Documento</label>
+                            <input type="text" id="numero_nota" name="numero_nota" placeholder="Número do documento">
+                        </div>
+                        <button type="submit" id="submit-button">Enviar Dados</button>
+                    </form>
+                    <div id="status-message"></div>
+                </div>
+            </section>
+
+            <section id="comprovantes" class="content-section">
+                <h1>Envio de Comprovantes de Pagamento</h1>
+                <p>Esta seção ainda está em construção.</p>
+            </section>
+
+            <section id="notinhas" class="content-section">
+                <h1>Envio de Notinhas (Dinheiro e Cartão)</h1>
+                <p>Esta seção ainda está em construção.</p>
+            </section>
+        </main>
+    </div>
+    <script src="dist/bundle.js"></script>
+</body>
+</html>
