@@ -48,3 +48,7 @@ Escolha o Ambiente Virtual do Projeto (Recommended)
 
 ### 4. Instalando as bibliotecas no ambiente virtual
 pip install -r requirements.txt
+
+
+npx webpack
+npx sass src/styles/main.scss dist/main.css

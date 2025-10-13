@@ -224,3 +224,51 @@ button {
         }
     }
 }
+
+
+// 9. Estilos para o Menu Dropdown
+.nav-item-dropdown {
+    .dropdown-toggle {
+        position: relative;
+        // Seta indicadora
+        &::after {
+            content: '›';
+            position: absolute;
+            right: 1rem;
+            font-size: 1.5rem;
+            transform: rotate(90deg);
+            transition: transform 0.3s ease-in-out;
+        }
+    }
+
+    // Estilos quando o dropdown está aberto
+    &.open {
+        .dropdown-toggle::after {
+            transform: rotate(-90deg); // Gira a seta para baixo
+        }
+        .submenu {
+            max-height: 500px; // Um valor alto para garantir que todos os itens apareçam
+        }
+    }
+}
+
+.submenu {
+    list-style: none;
+    padding-left: 1.5rem; // Recuo para os itens do submenu
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.4s ease-in-out;
+
+    li a {
+        padding-top: 0.8rem;
+        padding-bottom: 0.8rem;
+        font-size: 0.9rem;
+        color: #a0a0a0; // Cor um pouco mais suave para itens de submenu
+    }
+}
+
+
+// Classe utilitária para esconder elementos
+.hidden {
+    display: none;
+}

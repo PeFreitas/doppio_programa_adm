@@ -4,6 +4,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
+from processador import analisar_comprovante_ocr
 
 # Importa a sua função principal do processador
 from processador import processar_documento_com_dados_manuais
@@ -68,5 +69,41 @@ def upload_file():
         return jsonify(resultado), 500
 
 
+# --- ENDPOINT DE ANÁLISE COM OCR (VERSÃO ATUALIZADA) ---
+@app.route('/analisar-comprovante', methods=['POST'])
+def analisar_comprovante_endpoint():
+    logging.info(">>> REQUISIÇÃO DE ANÁLISE DE COMPROVANTE RECEBida <<<")
+    
+    files = request.files.getlist('documento')
+    if not files:
+        return jsonify({'status': 'ERRO', 'detalhes': 'Nenhum arquivo PDF enviado.'}), 400
+    
+    dados_parciais = request.form.to_dict()
+    logging.info(f"Dados parciais recebidos: {dados_parciais}")
+
+    # Lista para salvar os caminhos temporários
+    caminhos_temporarios = []
+    try:
+        for file in files:
+            filename = secure_filename(file.filename)
+            caminho_temporario = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(caminho_temporario)
+            caminhos_temporarios.append(caminho_temporario)
+        logging.info(f"{len(caminhos_temporarios)} arquivo(s) salvos para análise OCR.")
+    except Exception as e:
+        return jsonify({'status': 'ERRO', 'detalhes': f'Erro ao salvar arquivos: {e}'}), 500
+    
+    # Chama a função do processador, que agora recebe uma lista de caminhos
+    resultado_ocr = analisar_comprovante_ocr(caminhos_temporarios, dados_parciais)
+    
+    # Limpa todos os arquivos temporários
+    for caminho in caminhos_temporarios:
+        os.remove(caminho)
+    
+    if resultado_ocr['status'] == 'SUCESSO':
+        return jsonify(resultado_ocr['dados']), 200
+    else:
+        return jsonify({'detalhes': resultado_ocr['detalhes']}), 500
+    
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
