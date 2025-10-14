@@ -23,30 +23,31 @@ body {
     font-family: 'Poppins', sans-serif;
     background-color: var(--bg-dark);
     color: var(--primary-text);
-    display: flex;
     height: 100vh;
-    overflow: hidden;
+    width: 100vw;
+    overflow-x: hidden; // Previne rolagem horizontal
 }
 
 // 4. Layout Principal (Sidebar + Conteúdo)
 .app-container {
     display: flex;
+    height: 100%;
     width: 100%;
 }
 
 .sidebar {
     width: 260px;
+    flex-shrink: 0; // Impede que o sidebar encolha
     background-color: var(--sidebar-bg);
     padding: 1.5rem;
-    display: flex;
-    flex-direction: column;
     border-right: 1px solid var(--border-color);
 }
 
 .main-content {
-    flex-grow: 1;
+    flex-grow: 1; // Permite que a área de conteúdo cresça
     padding: 2rem;
-    overflow-y: auto; // Permite rolagem se o conteúdo for grande
+    overflow-y: auto; // Permite a rolagem vertical
+    width: 100%;
 }
 
 // 5. Estilos do Menu (Sidebar)
@@ -98,6 +99,13 @@ body {
         display: block; // Apenas a ativa é mostrada
     }
 }
+
+.container {
+    width: 100%;
+    max-width: 800px; // Limita a largura máxima em telas muito grandes
+    margin: 0 auto;
+}
+
 
 // Re-estilizando o formulário para o tema escuro
 .container h1 {
