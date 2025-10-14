@@ -272,3 +272,11 @@ button {
 .hidden {
     display: none;
 }
+
+// 10. Estilo para campos preenchidos via OCR
+.form-group input.ocr-filled,
+.form-group select.ocr-filled {
+    background-color: #2a4a3a; // Um verde escuro sutil
+    border-color: #3e8e41;
+    color: #eafbe7; // Texto claro para bom contraste
+}

@@ -4,7 +4,7 @@ console.log('[DEBUG] app.ts: O script foi carregado. Versão: final-debug');
 document.addEventListener('DOMContentLoaded', () => {
     console.log('[DEBUG] DOMContentLoaded: O documento HTML foi totalmente carregado e analisado.');
     
-    // --- LÓGICA DE NAVEGAÇÃO DO MENU ---
+    // --- LÓGICA DE NAVEGAÇÃO DO MENU (NÃO FOI ALTERADA) ---
     const navLinks = document.querySelectorAll('.nav-link');
     const contentSections = document.querySelectorAll('.content-section');
     navLinks.forEach(link => {
@@ -25,7 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
     
-    // --- LÓGICA PARA O "FORMULÁRIO" DE NOTAS ---
+    // --- LÓGICA PARA O "FORMULÁRIO" DE NOTAS (NÃO FOI ALTERADA) ---
     const notasContainer = document.getElementById('upload-form-container');
     if (notasContainer) {
         console.log("[DEBUG] Container de NOTAS (id='upload-form-container') encontrado.");
@@ -140,7 +140,7 @@ document.addEventListener('DOMContentLoaded', () => {
         console.error("[ERRO] Container de NOTAS (id='upload-form-container') NÃO foi encontrado.");
     }
 
-    // --- LÓGICA PARA O "FORMULÁRIO" DE COMPROVANTES ---
+    // --- LÓGICA PARA O "FORMULÁRIO" DE COMPROVANTES (CÓDIGO NOVO E INTELIGENTE) ---
     const comprovantesContainer = document.getElementById('comprovantes-form-container');
     if (comprovantesContainer) {
         console.log("[DEBUG] Container de COMPROVANTES (id='comprovantes-form-container') encontrado.");
@@ -192,42 +192,85 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateComprovantesFileListUI();
             }
         });
-
+        
+        // --- INÍCIO DA NOVA LÓGICA DO BOTÃO ---
         submitButton.addEventListener('click', async () => {
             console.log("[DEBUG] Botão de Envio de COMPROVANTES foi clicado!");
 
             if (selectedFiles.length === 0) {
-                statusMessage.textContent = 'Erro: Por favor, selecione ao menos um arquivo PDF.';
+                statusMessage.textContent = 'Erro: Por favor, selecione ao menos um arquivo.';
                 statusMessage.style.color = 'lightcoral';
                 return;
             }
-            submitButton.disabled = true;
 
-            const formData = new FormData();
-            selectedFiles.forEach(file => formData.append('documento', file));
-            formData.append('fornecedor', (document.getElementById('comprovantes-fornecedor') as HTMLInputElement).value);
-            formData.append('meio_pagamento', (document.getElementById('comprovantes-meio-pagamento') as HTMLSelectElement).value);
-            formData.append('valor', (document.getElementById('comprovantes-valor') as HTMLInputElement).value);
+            // --- Referências aos campos do formulário ---
+            const fornecedorInput = document.getElementById('comprovantes-fornecedor') as HTMLInputElement;
+            const meioPagamentoSelect = document.getElementById('comprovantes-meio-pagamento') as HTMLSelectElement;
+            const valorInput = document.getElementById('comprovantes-valor') as HTMLInputElement;
             const vencimentoInput = document.getElementById('comprovantes-vencimento') as HTMLInputElement;
-            if (vencimentoInput.value) formData.set('vencimento', vencimentoInput.value.split('-').reverse().join('/'));
             const pagamentoInput = document.getElementById('comprovantes-pagamento') as HTMLInputElement;
-            if (pagamentoInput.value) formData.set('pagamento', pagamentoInput.value.split('-').reverse().join('/'));
+            
+            // --- Limpa o destaque verde dos campos a cada clique ---
+            [fornecedorInput, valorInput, vencimentoInput, pagamentoInput].forEach(el => el.classList.remove('ocr-filled'));
 
-            if (!isConfirmationStep) {
+            const camposObrigatoriosPreenchidos = fornecedorInput.value && valorInput.value && vencimentoInput.value;
+
+            // Se for a etapa de confirmação, envia direto
+            if (isConfirmationStep) {
+                await enviarLancamentoFinal();
+                return;
+            }
+
+            // Se tudo estiver preenchido, envia direto (Cenário A)
+            if (camposObrigatoriosPreenchidos) {
+                console.log("[DEBUG] Cenário A: Todos os campos obrigatórios preenchidos. Enviando diretamente.");
+                submitButton.textContent = 'Enviar Lançamento';
+                await enviarLancamentoFinal();
+            } else {
+                // Se faltar algo, analisa com OCR (Cenário B)
+                console.log("[DEBUG] Cenário B: Faltam dados. Acionando análise OCR.");
+                submitButton.textContent = 'Analisar Comprovantes';
+                await analisarComOCR();
+            }
+
+            // --- Função para analisar com OCR ---
+            async function analisarComOCR() {
+                submitButton.disabled = true;
                 statusMessage.textContent = 'Analisando PDFs com OCR... Por favor, aguarde.';
                 statusMessage.style.color = 'lightblue';
+                
+                const formData = new FormData();
+                selectedFiles.forEach(file => formData.append('documento', file));
+                formData.append('fornecedor', fornecedorInput.value);
+                formData.append('meio_pagamento', meioPagamentoSelect.value);
+                formData.append('valor', valorInput.value);
+                if (vencimentoInput.value) formData.set('vencimento', vencimentoInput.value.split('-').reverse().join('/'));
+                if (pagamentoInput.value) formData.set('pagamento', pagamentoInput.value.split('-').reverse().join('/'));
+
                 try {
                     const response = await fetch('http://127.0.0.1:5000/analisar-comprovante', { method: 'POST', body: formData });
                     const result = await response.json();
                     if (!response.ok) throw new Error(result.detalhes || 'Erro na análise.');
-                    
-                    (document.getElementById('comprovantes-fornecedor') as HTMLInputElement).value = result.fornecedor || '';
-                    (document.getElementById('comprovantes-meio-pagamento') as HTMLSelectElement).value = result.meio_pagamento || 'BOLETO';
-                    (document.getElementById('comprovantes-valor') as HTMLInputElement).value = result.valor || '';
-                    (document.getElementById('comprovantes-vencimento') as HTMLInputElement).value = result.vencimento ? result.vencimento.split('/').reverse().join('-') : '';
-                    (document.getElementById('comprovantes-pagamento') as HTMLInputElement).value = result.pagamento ? result.pagamento.split('/').reverse().join('-') : '';
 
-                    statusMessage.textContent = 'Análise concluída. Verifique os dados e clique para confirmar.';
+                    // Preenche apenas os campos que estavam vazios e destaca
+                    if (!fornecedorInput.value && result.fornecedor) {
+                        fornecedorInput.value = result.fornecedor;
+                        fornecedorInput.classList.add('ocr-filled');
+                    }
+                    if (!valorInput.value && result.valor) {
+                        valorInput.value = result.valor;
+                        valorInput.classList.add('ocr-filled');
+                    }
+                    if (!vencimentoInput.value && result.vencimento) {
+                        vencimentoInput.value = result.vencimento.split('/').reverse().join('-');
+                        vencimentoInput.classList.add('ocr-filled');
+                    }
+                    if (!pagamentoInput.value && result.pagamento) {
+                        pagamentoInput.value = result.pagamento.split('/').reverse().join('-');
+                        pagamentoInput.classList.add('ocr-filled');
+                    }
+
+                    statusMessage.textContent = 'Análise concluída. Verifique e confirme os dados.';
                     statusMessage.style.color = 'lightgreen';
                     submitButton.textContent = 'Confirmar e Enviar Lançamento';
                     isConfirmationStep = true;
@@ -237,12 +280,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 } finally {
                     submitButton.disabled = false;
                 }
-            } else {
-                statusMessage.textContent = 'Enviando lançamento final...';
+            }
+
+            // --- Função para o envio final (Sheets/Drive) ---
+            async function enviarLancamentoFinal() {
+                submitButton.disabled = true;
+                statusMessage.textContent = 'Enviando lançamento final para Sheets e Drive...';
                 statusMessage.style.color = 'lightblue';
+                
+                const formDataFinal = new FormData();
+                selectedFiles.forEach(file => formDataFinal.append('documento', file));
+                formDataFinal.append('fornecedor', fornecedorInput.value);
+                formDataFinal.append('meio_pagamento', meioPagamentoSelect.value);
+                formDataFinal.append('valor', valorInput.value);
+                if (vencimentoInput.value) formDataFinal.set('vencimento', vencimentoInput.value.split('-').reverse().join('/'));
+                if (pagamentoInput.value) formDataFinal.set('pagamento', pagamentoInput.value.split('-').reverse().join('/'));
 
                 try {
-                    const response = await fetch('http://127.0.0.1:5000/upload', { method: 'POST', body: formData });
+                    const response = await fetch('http://127.0.0.1:5000/upload', { method: 'POST', body: formDataFinal });
                     const result = await response.json();
                     if (!response.ok) throw new Error(result.detalhes || 'Erro no envio.');
                     
@@ -258,17 +313,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         });
+        // --- FIM DA NOVA LÓGICA DO BOTÃO ---
 
         resetButton.addEventListener('click', () => {
             console.log("[DEBUG] Botão RESET do formulário de COMPROVANTES foi clicado.");
-            (comprovantesContainer as HTMLDivElement).querySelectorAll('input, select').forEach(el => (el as any).value = '');
+            (comprovantesContainer as HTMLDivElement).querySelectorAll('input, select').forEach(el => {
+                (el as any).value = '';
+                el.classList.remove('ocr-filled'); // Limpa o destaque verde
+            });
             selectedFiles = [];
             updateComprovantesFileListUI();
             statusMessage.textContent = '';
             resetButton.classList.add('hidden');
             submitButton.classList.remove('hidden');
             submitButton.disabled = false;
-            submitButton.textContent = 'Analisar Comprovantes';
+            submitButton.textContent = 'Enviar Comprovantes'; // Restaura o texto original do botão
             isConfirmationStep = false;
         });
     } else {

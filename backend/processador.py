@@ -116,22 +116,21 @@ def _padronizar_dados(dados_do_formulario):
     return dados_padronizados
 
 
-# --- FUNÇÃO DE BUSCA E ATUALIZAÇÃO (VERSÃO FINAL E ROBUSTA) ---
+
+
 def _buscar_e_atualizar_linha_existente(dados):
     if not all([gspread_client, dados.get('id_sheets'), GOOGLE_SHEET_ID]): return False
     try:
-        logging.info("Iniciando verificação de duplicatas (método robusto)...")
+        logging.info("Iniciando verificação de duplicatas (lógica final)...")
         sheet_gid = dados['id_sheets'].split('gid=')[-1]
         worksheet = gspread_client.open_by_key(GOOGLE_SHEET_ID).get_worksheet_by_id(int(sheet_gid))
         
-        # Usa get_all_values() para ler os dados brutos como texto
         all_data = worksheet.get_all_values()
         if not all_data: return False
 
         header = all_data[0]
         data_rows = all_data[1:]
 
-        # Encontra o índice (posição) de cada coluna necessária
         try:
             conta_idx = header.index('Conta')
             valor_idx = header.index('Valor')
@@ -145,60 +144,101 @@ def _buscar_e_atualizar_linha_existente(dados):
         vencimento_chave = dados.get('vencimento')
 
         for index, row_data in enumerate(data_rows):
-            # Acessa os dados da planilha pela posição da coluna
             fornecedor_planilha = row_data[conta_idx]
             valor_planilha_bruto = row_data[valor_idx]
             vencimento_planilha = row_data[vencimento_idx]
             
             valor_planilha_decimal = _normalize_valor_to_decimal(valor_planilha_bruto)
 
+            # A verificação de duplicata com os 3 campos obrigatórios
             if (fornecedor_planilha == fornecedor_chave and
                 valor_planilha_decimal is not None and
                 valor_chave_decimal is not None and
                 valor_planilha_decimal == valor_chave_decimal and
                 vencimento_planilha == vencimento_chave):
                 
-                logging.info(f"Linha duplicada encontrada na posição {index + 2}. Atualizando campos.")
-                # ... (lógica de atualização permanece a mesma)
-                mapeamento_colunas = { 'Meio Pagto': dados.get('meio_pagamento'), 'Nro NF': dados.get('numero_nota'), 'Data de Emissão da nota': dados.get('emissao') }
+                logging.info(f"Linha duplicada encontrada na posição {index + 2}. Verificando campos para complementar.")
+                
+                # Mapeia todos os campos que podem ser preenchidos
+                mapeamento_colunas = {
+                    'Meio Pagto': dados.get('meio_pagamento'),
+                    'Nro NF': dados.get('numero_nota'),
+                    'Data de Emissão da nota': dados.get('emissao'),
+                    'Data do pagamento': dados.get('pagamento')
+                }
+                
                 células_para_atualizar = []
                 for coluna, novo_valor in mapeamento_colunas.items():
-                    try:
-                        col_idx = header.index(coluna)
-                        if (str(row_data[col_idx]).strip() == '') and novo_valor:
-                            célula = gspread.Cell(row=index + 2, col=col_idx + 1, value=novo_valor)
-                            células_para_atualizar.append(célula)
-                    except (ValueError, IndexError): pass
+                    # Só tenta atualizar se um novo valor foi enviado
+                    if novo_valor:
+                        try:
+                            col_idx = header.index(coluna)
+                            # E a regra de ouro: só atualiza se a célula estiver VAZIA
+                            if str(row_data[col_idx]).strip() == '':
+                                célula = gspread.Cell(row=index + 2, col=col_idx + 1, value=novo_valor)
+                                células_para_atualizar.append(célula)
+                        except (ValueError, IndexError):
+                            logging.warning(f"Coluna '{coluna}' não encontrada na planilha. Ignorando.")
+                            pass
+                
                 if células_para_atualizar:
                     worksheet.update_cells(células_para_atualizar, value_input_option='USER_ENTERED')
-                return True
+                    logging.info(f"{len(células_para_atualizar)} célula(s) foram preenchidas na linha existente.")
+                else:
+                    logging.info("Nenhuma célula em branco precisou ser preenchida.")
 
-        logging.info("Nenhuma linha duplicada encontrada.")
-        return False
+                return True # Indica que uma duplicata foi encontrada e tratada
+
+        logging.info("Nenhuma linha duplicada correspondente foi encontrada.")
+        return False # Indica que nenhuma duplicata foi encontrada
 
     except Exception as e:
         logging.error(f"Erro ao buscar/atualizar no Google Sheets: {e}", exc_info=True)
         return False
 
 
-# --- O RESTO DAS FUNÇÕES PERMANECE O MESMO ---
+
 def _adicionar_nova_linha_sheets(dados):
     try:
+        logging.info("Criando nova linha na planilha...")
         sheet_gid = dados['id_sheets'].split('gid=')[-1]
         worksheet = gspread_client.open_by_key(GOOGLE_SHEET_ID).get_worksheet_by_id(int(sheet_gid))
-        linha_para_adicionar = [
-            dados.get('nome_padronizado', ''),
-            dados.get('meio_pagamento', 'BOLETO'),
-            dados.get('numero_nota', ''),
-            dados.get('valor_formatado_brl', ''),
-            dados.get('emissao', ''),
-            dados.get('vencimento', ''),
-            ''
-        ]
-        worksheet.append_row(linha_para_adicionar, value_input_option='USER_ENTERED')
-        return True
-    except Exception as e: return False
+        
+        # Estrutura base da linha. Os valores correspondem às colunas:
+        # Conta, Meio Pagto, Nro NF, Valor, Data de Emissão da nota, Data de vencimento, Data do pagamento
+        linha_base = {
+            'Conta': dados.get('nome_padronizado', ''),
+            'Meio Pagto': dados.get('meio_pagamento', 'BOLETO'),
+            'Nro NF': '',
+            'Valor': dados.get('valor_formatado_brl', ''),
+            'Data de Emissão da nota': '',
+            'Data de vencimento': dados.get('vencimento', ''),
+            'Data do pagamento': ''
+        }
 
+        # Preenche os campos específicos de NOTA ou COMPROVANTE
+        if dados.get('numero_nota'): # Se for uma Nota Fiscal
+            logging.info("É uma NOTA FISCAL. Preenchendo campos de NF e Emissão.")
+            linha_base['Nro NF'] = dados.get('numero_nota', '')
+            linha_base['Data de Emissão da nota'] = dados.get('emissao', '')
+        elif dados.get('pagamento'): # Se for um Comprovante
+            logging.info("É um COMPROVANTE. Preenchendo campo de Data do pagamento.")
+            linha_base['Data do pagamento'] = dados.get('pagamento', '')
+
+        # Pega o cabeçalho para garantir a ordem correta das colunas
+        header = worksheet.row_values(1)
+        
+        # Monta a lista final na ordem exata do cabeçalho da planilha
+        linha_para_adicionar = [linha_base.get(coluna, '') for coluna in header]
+
+        worksheet.append_row(linha_para_adicionar, value_input_option='USER_ENTERED')
+        logging.info("Nova linha adicionada com sucesso.")
+        return True
+    except Exception as e:
+        logging.error(f"Erro ao adicionar nova linha no Google Sheets: {e}", exc_info=True)
+        return False
+    
+    
 def _executar_upload_drive(dados, caminhos_arquivos_locais, nomes_originais_arquivos):
     if not drive_service: return False
     id_pasta_mes = dados.get('id_drive')
@@ -257,104 +297,130 @@ def processar_documento_com_dados_manuais(caminhos_arquivos, dados_formulario, n
 
 # --- FUNÇÕES DE OCR ---
 
+# --- SUBSTITUA A FUNÇÃO DE OCR PELA VERSÃO FINAL E CORRETA ---
+
 def _extrair_texto_pdf_com_ocr(caminho_pdf):
     """Converte PDF para imagem e extrai texto com Tesseract."""
     try:
-        poppler_path = os.getenv('POPPLER_PATH')
-        imagens = convert_from_path(caminho_pdf, poppler_path=poppler_path)
+        # --- CORREÇÃO DEFINITIVA ---
+        # Como o Poppler já está no PATH do sistema, não precisamos
+        # especificar o caminho manualmente. A biblioteca o encontrará sozinha.
+        logging.info("Poppler está no PATH. Deixando a biblioteca encontrá-lo automaticamente.")
+        
+        # Chamamos a função sem o argumento 'poppler_path'
+        imagens = convert_from_path(caminho_pdf)
+        
         texto_completo = ""
         for img in imagens:
             texto_completo += pytesseract.image_to_string(img, lang='por') + "\n"
+        
         logging.info("--- TEXTO BRUTO EXTRAÍDO DO PDF ---")
         logging.info(texto_completo)
         logging.info("------------------------------------")
         return texto_completo
+        
     except Exception as e:
+        # A mensagem de erro agora será a original da biblioteca, que é mais precisa.
         logging.error(f"Erro durante o processo de OCR: {e}", exc_info=True)
         return ""
 
+
 def _analisar_texto_bruto_comprovante(texto):
     """
-    Analisa o texto bruto para extrair informações do comprovante com regras aprimoradas.
+    Analisa o texto bruto usando uma abordagem híbrida:
+    - Usa thefuzz para encontrar o fornecedor mais provável no texto todo.
+    - Usa regex para extrair com precisão o valor e a data.
     """
     dados = {'fornecedor': '', 'valor': '', 'vencimento': '', 'pagamento': ''}
-    texto_lower = texto.lower()
-    
-    # 1. Extração de Valor (mais específica)
-    # [cite_start]Procura por "Valor: R$ 2.992,17" [cite: 8]
-    match_valor = re.search(r'valor[:\s]*r\$\s*([\d.,]+)', texto_lower)
-    if match_valor:
-        dados['valor'] = match_valor.group(1).strip()
-    
-    # 2. Extração de Data de Pagamento (mais específica)
-    # [cite_start]Procura por "data do debito", "data do pagamento", etc., seguido de uma data [cite: 14]
-    match_pagamento = re.search(r'(?:data\s+d[oa]\s+d[eé]bito|pagamento)\s*(\d{2}/\d{2}/\d{4})', texto_lower)
-    if match_pagamento:
-        dados['pagamento'] = match_pagamento.group(1)
-    else:
-        # Fallback: pega a última data no formato DD/MM/YYYY se a busca específica falhar
-        datas_encontradas = re.findall(r'\d{2}/\d{2}/\d{4}', texto)
-        if datas_encontradas:
-            dados['pagamento'] = datas_encontradas[-1]
+    logging.info("Iniciando análise de OCR com lógica híbrida (thefuzz + regex).")
 
-    # 3. Extração de Fornecedor com regra de exclusão
-    # [cite_start]O fornecedor é quem recebe, nunca a empresa que paga (TLKG) [cite: 3]
-    try:
-        # [cite_start]Encontra a seção "dados de quem recebeu" [cite: 4, 5]
-        secao_recebedor = texto_lower.split('dados de quem')[1].split('recebeu')[1]
-        
-        # [cite_start]Dentro dessa seção, procura pela linha que começa com "Nome:" [cite: 6]
-        match_fornecedor = re.search(r'nome[:\s]*([^\n]+)', secao_recebedor)
-        if match_fornecedor:
-            fornecedor = match_fornecedor.group(1).strip().upper()
-            # Garante que o fornecedor extraído não é a própria empresa
-            if 'tlkg' not in fornecedor.lower():
-                dados['fornecedor'] = fornecedor
-    except (IndexError, AttributeError):
-        logging.warning("Não foi possível encontrar a seção 'Dados de quem recebeu' ou o campo 'Nome:'.")
-        # Fallback: se a lógica acima falhar, tenta uma busca genérica
-        match_fornecedor_generico = re.search(r'empresa[:\s]*([^\n]+)', texto_lower)
-        if match_fornecedor_generico:
-             fornecedor = match_fornecedor_generico.group(1).strip().upper()
-             if 'tlkg' not in fornecedor.lower():
-                dados['fornecedor'] = fornecedor
+    # 1. ENCONTRAR O FORNECEDOR COM THEFUZZ
+    nomes_conhecidos = list(mapeamento_fornecedores.keys())
+    melhor_match = process.extractOne(texto, nomes_conhecidos, score_cutoff=85)
+    
+    if melhor_match:
+        nome_encontrado = melhor_match[0]
+        dados['fornecedor'] = nome_encontrado
+        logging.info(f"Fornecedor encontrado com a biblioteca thefuzz: '{nome_encontrado}' com score {melhor_match[1]}")
 
-    # 4. NOVA REGRA: Se não houver data de vencimento, usar a data de pagamento
+    # 2. EXTRAIR O VALOR COM REGEX (VERSÃO CORRIGIDA)
+    valores_encontrados = re.findall(r'R\$\s*([\d.,]+)', texto)
+    if valores_encontrados:
+        # CORREÇÃO: Apenas captura o valor como texto, sem o manipular.
+        # A função de normalização cuidará da conversão.
+        dados['valor'] = valores_encontrados[-1].strip()
+        logging.info(f"Valor encontrado com regex: R$ {dados['valor']}")
+
+    # 3. EXTRAIR A DATA DE PAGAMENTO COM REGEX
+    datas_encontradas = re.findall(r'(\d{2}/\d{2}/\d{4})', texto)
+    if datas_encontradas:
+        dados['pagamento'] = datas_encontradas[-1]
+        logging.info(f"Data de pagamento encontrada com regex: {dados['pagamento']}")
+
+    # 4. REGRA DE VENCIMENTO (FALLBACK)
     if not dados.get('vencimento') and dados.get('pagamento'):
-        logging.info("Data de vencimento não encontrada. Usando a data de pagamento como fallback.")
+        logging.info("Data de vencimento não encontrada. Usando a data do pagamento como fallback.")
         dados['vencimento'] = dados['pagamento']
         
-    logging.info(f"Dados extraídos pelo OCR: {dados}")
+    logging.info(f"Dados extraídos pelo OCR (lógica híbrida): {dados}")
     return dados
+
 
 def analisar_comprovante_ocr(lista_caminhos_pdf, dados_parciais):
     """
-    Função orquestradora que processa múltiplos PDFs e agrega os resultados.
+    Função orquestradora que processa múltiplos PDFs e agrega os resultados
+    com base nas regras de negócio (maior valor, data mais tardia).
     """
     dados_agregados = {
-        'fornecedor': '', 'valor': '', 'vencimento': '', 'pagamento': ''
+        'fornecedor': '',
+        'valor': None,
+        'pagamento': None
     }
 
-    # Itera sobre cada PDF enviado
+    logging.info(f"Iniciando análise de {len(lista_caminhos_pdf)} documento(s) com lógica de agregação.")
+
     for caminho_pdf in lista_caminhos_pdf:
         texto_extraido = _extrair_texto_pdf_com_ocr(caminho_pdf)
         if not texto_extraido:
-            continue # Pula para o próximo arquivo se este falhar
+            continue
 
         dados_do_pdf_atual = _analisar_texto_bruto_comprovante(texto_extraido)
 
-        # Atualiza os dados agregados, preenchendo apenas os campos vazios
-        for campo, valor in dados_do_pdf_atual.items():
-            if not dados_agregados.get(campo) and valor:
-                dados_agregados[campo] = valor
+        if not dados_agregados.get('fornecedor') and dados_do_pdf_atual.get('fornecedor'):
+            dados_agregados['fornecedor'] = dados_do_pdf_atual['fornecedor']
 
-    # Combina os resultados: dados do usuário têm prioridade máxima
+        valor_atual_decimal = _normalize_valor_to_decimal(dados_do_pdf_atual.get('valor'))
+        if valor_atual_decimal is not None:
+            if dados_agregados['valor'] is None or valor_atual_decimal > dados_agregados['valor']:
+                dados_agregados['valor'] = valor_atual_decimal
+                logging.info(f"Novo maior valor encontrado: {valor_atual_decimal}")
+
+        data_atual_str = dados_do_pdf_atual.get('pagamento')
+        if data_atual_str:
+            try:
+                data_atual_obj = datetime.strptime(data_atual_str, "%d/%m/%Y")
+                if dados_agregados['pagamento'] is None or data_atual_obj > dados_agregados['pagamento']:
+                    dados_agregados['pagamento'] = data_atual_obj
+                    logging.info(f"Nova data de pagamento mais tardia encontrada: {data_atual_str}")
+            except ValueError:
+                logging.warning(f"Formato de data inválido encontrado: '{data_atual_str}'. Ignorando.")
+
+    # --- PREPARAÇÃO DOS DADOS FINAIS (COM A CORREÇÃO) ---
+
+    # CORREÇÃO: Usa a função _format_decimal_to_brl para formatar o valor para o frontend.
+    valor_final_str = _format_decimal_to_brl(dados_agregados['valor'])
+
+    pagamento_final_str = ""
+    if dados_agregados['pagamento'] is not None:
+        pagamento_final_str = dados_agregados['pagamento'].strftime("%d/%m/%Y")
+        
     dados_finais = {
         'fornecedor': dados_parciais.get('fornecedor') or dados_agregados.get('fornecedor'),
         'meio_pagamento': dados_parciais.get('meio_pagamento'),
-        'valor': dados_parciais.get('valor') or dados_agregados.get('valor'),
-        'vencimento': dados_parciais.get('vencimento') or dados_agregados.get('vencimento'),
-        'pagamento': dados_parciais.get('pagamento') or dados_agregados.get('pagamento'),
+        'valor': dados_parciais.get('valor') or valor_final_str,
+        'vencimento': dados_parciais.get('vencimento') or pagamento_final_str,
+        'pagamento': dados_parciais.get('pagamento') or pagamento_final_str,
     }
     
+    logging.info(f"Dados finais agregados a serem enviados para o frontend: {dados_finais}")
     return {'status': 'SUCESSO', 'dados': dados_finais}
