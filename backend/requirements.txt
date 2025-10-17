@@ -36,3 +36,10 @@ thefuzz==0.20.0
 pytesseract==0.3.10
 pdf2image==1.16.3
 Pillow==11.3.0 
+
+# Para conexão com o PostgreSQL
+psycopg2-binary==2.9.9
+SQLAlchemy==2.0.29
+
+# Para agendamento de tarefas
+APScheduler==3.10.4

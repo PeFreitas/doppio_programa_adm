@@ -5,6 +5,7 @@ import Sidebar from './components/Sidebar';
 import UploadForm from './components/Uploadform';
 import ComprovantesForm from './components/ComprovantesForm'; // <-- 1. Importe o novo componente
 import './styles/main.scss';
+import Dashboard from './components/Dashboard';
 
 const App: React.FC = () => {
     const [activeSection, setActiveSection] = useState('notas');
@@ -28,7 +29,12 @@ const App: React.FC = () => {
                         <ComprovantesForm />
                      </section>
                 )}
-                {/* Adicione outras seções aqui */}
+                 {activeSection === 'dre' && (
+                     <section id="dre" className="content-section active">
+                        {/* Aqui estamos usando o componente Dashboard que você importou */}
+                        <Dashboard />
+                     </section>
+                )}
             </main>
         </div>
     );

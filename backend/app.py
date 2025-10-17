@@ -7,6 +7,10 @@ from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 from processador import analisar_comprovante_ocr, processar_documento_com_dados_manuais
+from flask import jsonify
+from sqlalchemy.orm import Session
+from . import models, database
+
 
 # --- CONFIGURAÇÃO INICIAL ---
 load_dotenv()
@@ -93,5 +97,21 @@ def analisar_comprovante_endpoint():
     else:
         return jsonify({'detalhes': resultado_ocr['detalhes']}), 500
     
+
+    
+app = Flask(__name__)
+
+# Função que será executada diariamente
+def tarefa_diaria_sincronizacao():
+    print("Iniciando sincronização diária de dados das APIs...")
+    # Aqui você chamará as funções para buscar dados do Conta Azul e TOTVS
+    # Ex: sync_conta_azul()
+    # Ex: sync_totvs_chef()
+    print("Sincronização concluída.")
+
 if __name__ == '__main__':
+    scheduler = BackgroundScheduler(daemon=True)
+    # Agenda a tarefa para rodar todos os dias à 1 da manhã
+    scheduler.add_job(tarefa_diaria_sincronizacao, 'cron', hour=1)
+    scheduler.start()
     app.run(debug=True, port=5000)
